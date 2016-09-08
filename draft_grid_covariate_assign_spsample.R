@@ -21,6 +21,7 @@ source(paste(dir_header,"scalar_cov_parse.R",sep=""))
 source(paste(dir_header,"vector_cov_parse.R",sep=""))
 ####
 
+print('Defining grid boundaries...')
 # define the boundaries of the grid:
 # load crawl-modeled 2005, 2006 tracks that should be contained within our grid
 adult_pup_frame <- read.csv(file='~/Desktop/NMML_Phase_2/Adult_pup.csv')
@@ -38,8 +39,6 @@ pup_bering_ind <- pup_site != 'SM'
 pup_lat_b <- pup_lat[pup_bering_ind]
 pup_lon_b <- pup_lon[pup_bering_ind]
 #
-bound_lat <- c(min(pup_lat_b)-2,max(pup_lat_b)+2)
-bound_lon <- c(min(pup_lon_b)-2,max(pup_lon_b)+2)
 
 input_lonlat <- list(x=pup_lon_b,y=pup_lat_b)
 #### define projection
@@ -61,8 +60,8 @@ bbox_poly_xy <- cbind(c(min_x,min_x,max_x,max_x,min_x),c(min_y,max_y,max_y,min_y
 bbox_poly <- Polygon(bbox_poly_xy)
 
 #### DEFINE hexagonal grid
-cellsize_input <- 40000
-n_input <- 130*50 # believe this is superseded by cellsize
+cellsize_input <- 40000 # distance between hex cell centers
+n_input <- 130*50 # this may be superseded by cellsize; i have set it as approximately the expected number
 #### name of shapefile to be written
 # shapefile_fname <- '~/Desktop/NMML_Phase_2/Movement_I/hex_lattice_spsample_NFS_pup'
 shapefile_fname <- '~/Desktop/NMML_Phase_2/Movement_I/hex_lattice_spsample_NFS_pup_test_run'
@@ -82,6 +81,7 @@ hex_poly_test <- hex_grid_list$hex_polys_projected # polgons in projected coordi
 
 # this function fits track 355 (input actually not needed)
 # and gives back the x/y coords for 30 imputations
+print('Fitting crawl to track and generating imputations...')
 #>>>>>># it is a PLACEHOLDER -- to be replaced by a function that can operate on a track of choice
 samp <- crawl_fit_and_imp_examp(355)
 sampled_tracks <- samp$imputations
@@ -100,10 +100,10 @@ for (samp_i in 1:length(sampled_tracks)){
 }
 # subsample this to hourly resolution (necessary? see below. actually, I think it is the large polygons
 # that cause over() to run slowly, rather than imputation points)
-subsample_rows <- seq(from=1,to=n_predtime,by=6) # sample hourly
-imp_x_subsample <- imp_x_mat[subsample_rows,]
-imp_y_subsample <- imp_y_mat[subsample_rows,]
-samp_time_sub <- samp_predTime[subsample_rows]
+# subsample_rows <- seq(from=1,to=n_predtime,by=1) # oppor
+imp_x_subsample <- imp_x_mat
+imp_y_subsample <- imp_y_mat
+samp_time_sub <- samp_predTime
   
   
 ## define time grid
@@ -129,10 +129,12 @@ imp_y_vec <- as.vector(imp_y_subsample)
 imp_xy_mat <- cbind(imp_x_vec,imp_y_vec)
 imp_points <- SpatialPoints(imp_xy_mat,proj4string = CRS(proj_def))
 imp_over <- over(imp_points,hex_poly_test)
+
+print('Determining hexes visited in each time interval...')
 for (nci in 1:length(ncep_time_inds)){
   this_time_ind <- ncep_time_inds[nci]
   sub_rows <- which(samp_time_sub >= ncep_posix[this_time_ind] & samp_time_sub < ncep_posix[this_time_ind+1],arr.ind=TRUE)
-  if(length(sub_rows) == 0){
+  if(length(sub_rows) == 0){ # no modeled animal positions in this interval
   next
   }
   sub_over <- imp_over[sub_rows]
@@ -151,16 +153,14 @@ for (nci in 1:length(ncep_time_inds)){
 # now have list of grid time points, and list of hexes on which the covariates should be defined for each
 # of these time points
 
+print('Creating row header matrix...')
 # create empty 'big' data matrix, with master list of from-/to- hex connection rows for each time
 row_header_mat <- matrix(data=NA,nrow=0,ncol=4)
 # columns of row_header_mat: (1) hex FROM, (2) hex TO, (3) bearing of line connecting FROM-TO, (4) time ID,
 # where time ID = 1 is the first ncep time greater than or equal to the first track time (defined above)
 for (nci in 1:length(ncep_time_inds)){
   this_hex_visit <- hexes_visited_list[[nci]]
-  ##### ADD EXTRA BUFFER?
-  # by 1 row? ^^^^ i.e., find neighbors of neighbors?
-  # or, if imputations generated above are exactly those to be used in model,
-  # then just don't subsample the imputations to hourly resolution and it won't be a problem.
+  # imputations generated above are exactly those to be used in model
   this_visit_header <- matrix(data=NA,nrow=0,ncol=4)
   for (thi in 1:length(this_hex_visit)){
     these_rows <- which(hex_conn$hex_from_vec == this_hex_visit[thi],arr.ind=TRUE)
@@ -180,6 +180,7 @@ for (nci in 1:length(ncep_time_inds)){
 # (from a limited set of operations)
 # each call of *_cov_parse also adds a column to big data frame
 
+print('Interpolating covariates...')
 # prepare to interpolate/assign covariates
 # SEA SURFACE TEMPERATURE
 load("sst_list_05.Rda") # sst_list_05
@@ -189,7 +190,7 @@ sst_col <- scalar_cov_parse(sst_list_05,"value_in_hex",row_header_mat,grid_time,
 load("slp_list_05.Rda") # slp_list_05
 slp_col <- scalar_cov_parse(slp_list_05,"value_in_hex",row_header_mat,grid_time,hex_info)
 # SURFACE WINDS
-load("surf_winds_05_list.Rda")
+load("surf_winds_05_list.Rda") 
 wind_to_adjacent_col <- vector_cov_parse(surf_winds_05_list,"component_to_adjacent",row_header_mat,grid_time,hex_info)
 wind_left_to_adjacent_col <- vector_cov_parse(surf_winds_05_list,"component_90_deg_left_to_adjacent",row_header_mat,grid_time,hex_info)
 wind_spd_col <- vector_cov_parse(surf_winds_05_list,"magnitude_in_hex",row_header_mat,grid_time,hex_info)
@@ -197,15 +198,34 @@ wind_spd_col <- vector_cov_parse(surf_winds_05_list,"magnitude_in_hex",row_heade
 load("surf_currents_05_list.Rda")
 ug_to_adjacent_col <- vector_cov_parse(surf_currents_05_list,"component_to_adjacent",row_header_mat,grid_time,hex_info)
 
+print('Generating kinematic covariates...')
+# KINEMATIC COVARIATES
+# distance from rookery
+# approximated here as dist from first point
+mean_x_start <- mean(imp_x_mat[1,])
+mean_y_start <- mean(imp_y_mat[1,])
+lonlat_start <- project(c(mean_x_start,mean_y_start),proj=proj_def,inverse=TRUE)
+a_grs80 <- 6378137
+f_grs80 <- 1/298.257222100882711243
+hex_lon_visited <- hex_info$Lon_Center[row_header_mat[,1]]
+hex_lat_visited <- hex_info$Lat_Center[row_header_mat[,1]]
+lon_start_vec <- matrix(data=lonlat_start[1],nrow=length(hex_lon_visited),ncol=1)
+lat_start_vec <- matrix(data=lonlat_start[2],nrow=length(hex_lat_visited),ncol=1)
+dist_from_rookery_col <- distGeo(cbind(lon_start_vec,lat_start_vec),cbind(hex_lon_visited,hex_lat_visited),a=a_grs80,f=f_grs80)
+
 # output data frame, same format as before
 master_cov_frame <- data.frame(hex_ID_from=row_header_mat[,1],hex_ID_to=row_header_mat[,2]
-                           ,time_ID=row_header_mat[,4],time_val=grid_time[row_header_mat[,4]]
+                           ,time_ID=row_header_mat[,4],time_val=grid_time[row_header_mat[,4]],bearing_to_next=row_header_mat[,3]
                            ,wind_component_to_next=wind_to_adjacent_col,wind_component_90_deg_left_of_next=wind_left_to_adjacent_col
                            ,current_component_to_next=ug_to_adjacent_col,sst_grad_to_next=sst_grad_col
-                           ,sst_in_cell=sst_col,slp_in_cell=slp_col,wind_strength_in_cell=wind_spd_col)
+                           ,sst_in_cell=sst_col,slp_in_cell=slp_col,wind_strength_in_cell=wind_spd_col
+                           ,dist_from_rookery=dist_from_rookery_col)
+
+print('Covariate data frame created, ready for selection and model fitting.')
 
 # model building, fitting goes here
 
-# secondary to above: create vignette for creating *.Rda file for each covariate
+# secondary to above: create vignette for creating *.Rda file for each covariate?
 # (secondary vignette should also have option for OpenDap rather than accessing netCDF files on computer)
-# or, following DSJ advice, perhaps just avoid? (since my netCDF downloading has sometimes been in chunks over time)
+# or, following DSJ advice, perhaps just avoid? (since my netCDF downloading has sometimes been in chunks over time...
+# would need to re-download, plus OpenDap is incredibly slow over AFSC wi-fi)
