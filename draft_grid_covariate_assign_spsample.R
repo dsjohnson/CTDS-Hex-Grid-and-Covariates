@@ -15,13 +15,14 @@ library(spdep)
 
 #### to be replaced by library(our_package...)
 dir_header <- "~/Desktop/NMML_Phase_2/R_Scripts/NAP_Hex_Grid_and_Covariate_Operations/"
+# dir_header = "~/research/projects/methodology_devel/fur_seal_migration_SMM/CTDS-Hex-Grid-and-Covariates/"
 source(paste(dir_header,"hex_grid_spsample.R",sep=""))
 source(paste(dir_header,"crawl_fit_and_imp_examp.R",sep=""))
 source(paste(dir_header,"scalar_cov_parse.R",sep=""))
 source(paste(dir_header,"vector_cov_parse.R",sep=""))
 ####
 
-print('Defining grid boundaries...')
+message('Defining grid boundaries...')
 # define the boundaries of the grid:
 # load crawl-modeled 2005, 2006 tracks that should be contained within our grid
 adult_pup_frame <- read.csv(file='~/Desktop/NMML_Phase_2/Adult_pup.csv')
